@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /_next/
+Disallow: /dashboard/settings/
+Disallow: /dashboard/admin/
+
+Sitemap: https://w-leads.vercel.app/sitemap.xml
