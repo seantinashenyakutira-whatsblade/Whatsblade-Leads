@@ -1,4 +1,5 @@
 import { env } from '@/lib/env';
+import { COUNTRIES } from '@/lib/countries';
 
 interface LeadRecord {
   facebook_page_id: string | null;
@@ -11,21 +12,14 @@ interface LeadRecord {
   [key: string]: unknown;
 }
 
-const WHATSAPP_COUNTRIES = new Set([
-  'US', 'GB', 'CA', 'AU', 'DE', 'FR', 'IT', 'ES', 'BR', 'MX', 'AR', 'CO',
-  'CL', 'PE', 'VE', 'ZA', 'NG', 'KE', 'GH', 'EG', 'MA', 'IN', 'PK', 'BD',
-  'ID', 'MY', 'PH', 'TH', 'VN', 'SG', 'JP', 'KR', 'CN', 'RU', 'UA', 'PL',
-  'NL', 'BE', 'SE', 'NO', 'DK', 'FI', 'PT', 'IE', 'AT', 'CH', 'CZ', 'RO',
-  'HU', 'GR', 'TR', 'SA', 'AE', 'IL', 'ZM', 'ZW', 'BW', 'MZ', 'TZ', 'UG',
-  'RW', 'ET', 'CM', 'CI', 'SN', 'ML', 'BF', 'NE', 'TD', 'CF', 'GA', 'CG',
-  'CD', 'AO', 'NA', 'LS', 'SZ', 'MW', 'MG', 'MU', 'SC', 'RE', 'YT',
-]);
+const WHATSAPP_COUNTRIES = new Set(
+  COUNTRIES.map((c) => c.code)
+);
 
 export async function enrichSocial(lead: LeadRecord) {
   const updates: Record<string, unknown> = {};
   const details: Record<string, unknown> = {};
 
-  // Facebook enrichment
   if (lead.facebook_page_id) {
     const fbData = await fetchFacebookPageData(lead.facebook_page_id);
     if (fbData) {
@@ -39,7 +33,6 @@ export async function enrichSocial(lead: LeadRecord) {
       }
     }
   } else if (lead.company && lead.city) {
-    // Search for Facebook page by name + city
     const matchedPage = await searchFacebookPage(lead.company, lead.city);
     if (matchedPage) {
       updates.facebook_page_id = matchedPage.id;
@@ -52,7 +45,6 @@ export async function enrichSocial(lead: LeadRecord) {
     }
   }
 
-  // Instagram detection from website meta tags
   if (lead.website) {
     const instagramUrl = await detectInstagramFromWebsite(lead.website);
     if (instagramUrl) {
@@ -62,9 +54,22 @@ export async function enrichSocial(lead: LeadRecord) {
     } else {
       details.instagramFound = false;
     }
+
+    const linkedinUrl = await detectLinkedInFromWebsite(lead.website);
+    if (linkedinUrl) {
+      const existingSocial = lead.social_media || {};
+      updates.social_media = { ...existingSocial, linkedin: linkedinUrl };
+      details.linkedinFound = true;
+    }
+
+    const twitterUrl = await detectTwitterFromWebsite(lead.website);
+    if (twitterUrl) {
+      const existingSocial = lead.social_media || {};
+      updates.social_media = { ...existingSocial, twitter: twitterUrl };
+      details.twitterFound = true;
+    }
   }
 
-  // WhatsApp availability check
   if (lead.phone) {
     const isAvailable = checkWhatsAppAvailability(lead.phone, lead.country);
     updates.whatsapp_available = isAvailable;
@@ -122,7 +127,6 @@ async function searchFacebookPage(name: string, city: string) {
 
     if (!data.data?.length) return null;
 
-    // Find best match by name similarity
     const normalizedName = name.toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const page of data.data) {
       const normalizedPageName = page.name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -155,7 +159,6 @@ async function detectInstagramFromWebsite(url: string): Promise<string | null> {
 
     const html = await response.text();
 
-    // Check meta tags for Instagram
     const metaPatterns = [
       /<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']*instagram\.com\/[^"']+)["']/i,
       /<meta[^>]+name=["']twitter:site["'][^>]+content=["']@?([^"']+)["']/i,
@@ -173,7 +176,6 @@ async function detectInstagramFromWebsite(url: string): Promise<string | null> {
       }
     }
 
-    // Check anchor tags for Instagram links
     const anchorPattern = /<a[^>]+href=["']([^"']*instagram\.com\/([^"']+)?)["'][^>]*>/gi;
     let anchorMatch;
     while ((anchorMatch = anchorPattern.exec(html)) !== null) {
@@ -189,13 +191,88 @@ async function detectInstagramFromWebsite(url: string): Promise<string | null> {
   }
 }
 
+async function detectLinkedInFromWebsite(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Whatsblade/1.0; +https://whatsblade.com)',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+
+    const html = await response.text();
+
+    const linkedinPattern = /<a[^>]+href=["']([^"']*linkedin\.com\/(company|in)\/[^"']+)["'][^>]*>/i;
+    const match = html.match(linkedinPattern);
+    
+    if (match) {
+      return match[1];
+    }
+
+    const metaPattern = /<meta[^>]+property=["']([^"']*linkedin\.com[^"']*)["']/i;
+    const metaMatch = html.match(metaPattern);
+    if (metaMatch) {
+      return metaMatch[1];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function detectTwitterFromWebsite(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Whatsblade/1.0; +https://whatsblade.com)',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+
+    const html = await response.text();
+
+    const twitterPatterns = [
+      /<a[^>]+href=["']([^"']*(twitter\.com|x\.com)\/[^"']+)["'][^>]*>/i,
+      /<meta[^>]+name=["']twitter:site["'][^>]+content=["']@?([^"']+)["']/i,
+    ];
+
+    for (const pattern of twitterPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        let twitterUrl = match[1];
+        if (!twitterUrl.startsWith('http')) {
+          twitterUrl = `https://x.com/${twitterUrl.replace('@', '')}`;
+        }
+        return twitterUrl;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function checkWhatsAppAvailability(phone: string, country: string | null): boolean {
-  // Check if country supports WhatsApp
   if (country && !WHATSAPP_COUNTRIES.has(country.toUpperCase())) {
     return false;
   }
 
-  // Check if phone number is in valid international format (E.164)
   const cleanPhone = phone.replace(/[^0-9+]/g, '');
   const e164Pattern = /^\+[1-9]\d{6,14}$/;
 

@@ -11,11 +11,13 @@ import { settingsRouter } from '@/lib/trpc/routers/settings';
 import { discoverRouter } from '@/lib/trpc/routers/discover';
 import { outreachRouter } from '@/lib/trpc/routers/outreach';
 import { enrichmentRouter } from '@/lib/trpc/routers/enrichment';
+import { enrichmentScheduleRouter } from '@/lib/trpc/routers/enrichment-schedule';
 import { notesRouter } from '@/lib/trpc/routers/notes';
 import { remindersRouter } from '@/lib/trpc/routers/reminders';
 import { filtersRouter } from '@/lib/trpc/routers/filters';
 import { adminRouter } from '@/lib/trpc/routers/admin';
 import { integrationsRouter } from '@/lib/trpc/routers/integrations';
+import { searchRouter } from '@/lib/trpc/routers/search';
 
 export const appRouter = router({
   auth: authRouter,
@@ -30,11 +32,13 @@ export const appRouter = router({
   discover: discoverRouter,
   outreach: outreachRouter,
   enrichment: enrichmentRouter,
+  enrichmentSchedule: enrichmentScheduleRouter,
   notes: notesRouter,
   reminders: remindersRouter,
   filters: filtersRouter,
   admin: adminRouter,
   integrations: integrationsRouter,
+  search: searchRouter,
 });
 
 export type AppRouter = typeof appRouter;

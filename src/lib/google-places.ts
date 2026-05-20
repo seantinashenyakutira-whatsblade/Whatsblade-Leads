@@ -102,17 +102,53 @@ export async function googleGeocode(address: string): Promise<{ lat: number; lng
   const apiKey = env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return null;
 
-  const response = await fetch(
-    `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`
-  );
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`
+    );
 
-  if (!response.ok) return null;
+    if (!response.ok) return null;
 
-  const data = await response.json();
-  if (data.status !== 'OK' || !data.results?.length) return null;
+    const data = await response.json();
+    if (data.status !== 'OK' || !data.results?.length) return null;
 
-  const { lat, lng } = data.results[0].geometry.location;
-  return { lat, lng };
+    const { lat, lng } = data.results[0].geometry.location;
+    return { lat, lng };
+  } catch {
+    return null;
+  }
+}
+
+export async function openStreetMapGeocode(address: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`,
+      {
+        headers: {
+          'User-Agent': 'Whatsblade/1.0 (Lead Discovery Platform)',
+        },
+      }
+    );
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data.length) return null;
+
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function geocodeWithFallback(address: string): Promise<{ lat: number; lng: number } | null> {
+  const googleResult = await googleGeocode(address);
+  if (googleResult) return googleResult;
+
+  return await openStreetMapGeocode(address);
 }
 
 export function extractIndustryFromTypes(types: string[] = []): string | null {

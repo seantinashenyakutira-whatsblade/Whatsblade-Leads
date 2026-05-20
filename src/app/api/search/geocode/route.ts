@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { googleGeocode } from '@/lib/google-places';
+import { geocodeWithFallback } from '@/lib/google-places';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Address is required' }, { status: 400 });
     }
 
-    const result = await googleGeocode(address);
+    const result = await geocodeWithFallback(address);
 
     if (!result) {
       return NextResponse.json({ error: 'Could not geocode address' }, { status: 404 });

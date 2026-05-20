@@ -46,7 +46,9 @@ export interface Lead {
   source_platform: LeadSourcePlatform;
   industry: string | null;
   photos: string[];
+  photo_urls: string[];
   opening_hours: Record<string, unknown>;
+  opening_hours_formatted: string | null;
   price_level: number | null;
   created_at: string;
   updated_at: string;
@@ -55,6 +57,25 @@ export interface Lead {
   expected_close_date: string | null;
   next_action: string | null;
   next_action_date: string | null;
+  instagram_url: string | null;
+  instagram_followers: number | null;
+  instagram_verified: boolean;
+  facebook_followers: number | null;
+  facebook_last_post_date: string | null;
+  whatsapp_available: boolean;
+  website_status: string | null;
+  has_booking_system: boolean;
+  is_mobile_responsive: boolean;
+  website_quality_score: number | null;
+  social_presence_score: number | null;
+  ai_summary: string | null;
+  opportunity_tags: string[];
+  last_enriched_at: string | null;
+  enrichment_status: string;
+  technographics: Record<string, unknown>;
+  email_addresses: string[];
+  review_sentiment_score: number | null;
+  competitor_analysis: Record<string, unknown>[];
 }
 
 export interface LeadNote {
@@ -95,10 +116,12 @@ export interface DiscoveredLead {
   address: string | null;
   city: string | null;
   country: string | null;
+  countryCode: string | null;
   latitude: number | null;
   longitude: number | null;
   phone: string | null;
   email: string | null;
+  emailAddresses: string[];
   website: string | null;
   googleRating: number | null;
   googleReviewCount: number | null;
@@ -107,6 +130,7 @@ export interface DiscoveredLead {
   source: LeadSourcePlatform;
   photos: string[];
   openingHours: Record<string, unknown>;
+  openingHoursFormatted: string | null;
   priceLevel: number | null;
   googlePlaceId: string | null;
   facebookPageId: string | null;
@@ -329,4 +353,48 @@ export interface SystemHealth {
   webhooks: { total: number; active: number; failing: number };
   queue_depth: number;
   last_backup: string | null;
+}
+
+export interface SearchHistory {
+  id: string;
+  user_id: string;
+  query: string;
+  industry: string | null;
+  country: string | null;
+  city: string | null;
+  radius: number | null;
+  filters: Record<string, unknown>;
+  result_count: number;
+  created_at: string;
+}
+
+export interface SavedSearch {
+  id: string;
+  user_id: string;
+  name: string;
+  industry: string | null;
+  country: string | null;
+  city: string | null;
+  radius: number;
+  filters: Record<string, unknown>;
+  max_results: number;
+  sort_by: string;
+  sort_order: 'asc' | 'desc';
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EnrichmentSchedule {
+  id: string;
+  user_id: string;
+  lead_id: string;
+  schedule_type: string;
+  scheduled_at: string;
+  recurrence: string | null;
+  status: string;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  updated_at: string;
 }

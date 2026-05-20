@@ -7,7 +7,7 @@ const BOOKING_KEYWORDS = [
   'calendly', 'squareup', 'booksy', 'fresha', 'acuity', 'setmore',
   'simplybook', 'booking.com', 'reservio', 'timely', 'mindbody',
   'fareharbor', 'peek', 'bookeo', 'appointy', '10to8', 'youcanbookme',
-  'scheduleonce', 'chili Piper', 'hubspot meetings',
+  'scheduleonce', 'chili piper', 'hubspot meetings',
 ];
 
 const PARKED_INDICATORS = [
@@ -16,6 +16,35 @@ const PARKED_INDICATORS = [
   'godaddy.com/domain', 'namecheap.com', 'parkingcrew', 'bodis.com',
   'dan.com', 'afternic.com', 'flippa.com',
 ];
+
+const TECHNOLOGY_PATTERNS: Record<string, RegExp> = {
+  WordPress: /wp-content|wp-includes|wordpress/i,
+  Shopify: /shopify|myshopify\.com/i,
+  WooCommerce: /woocommerce/i,
+  Wix: /wix\.com|wixsite\.com/i,
+  Squarespace: /squarespace\.com/i,
+  Webflow: /webflow\.io|webflow\.com/i,
+  Joomla: /joomla/i,
+  Drupal: /drupal/i,
+  Magento: /magento|\.magento\.cloud/i,
+  PrestaShop: /prestashop/i,
+  'Google Analytics': /google-analytics\.com|gtag/i,
+  'Google Tag Manager': /googletagmanager\.com/i,
+  'Facebook Pixel': /facebook\.com\/tr|fbq\(/i,
+  HubSpot: /hubspot\.com|hs-scripts\.com/i,
+  Salesforce: /salesforce\.com|force\.com/i,
+  Stripe: /js\.stripe\.com/i,
+  PayPal: /paypal\.com\/sdk/i,
+  Cloudflare: /cloudflare\.com|cloudflare-static/i,
+  'Amazon AWS': /amazonaws\.com/i,
+  'Microsoft Azure': /azureedge\.net|azurewebsites\.net/i,
+  React: /react|reactjs/i,
+  Vue: /vue\.js|vuejs/i,
+  Angular: /angular/i,
+  jQuery: /jquery/i,
+  Bootstrap: /bootstrap/i,
+  Tailwind: /tailwindcss/i,
+};
 
 export async function enrichWebsite(lead: LeadRecord) {
   if (!lead.website) {
@@ -34,6 +63,7 @@ export async function enrichWebsite(lead: LeadRecord) {
     has_booking_system: result.hasBookingSystem,
     is_mobile_responsive: result.isMobileResponsive,
     website_quality_score: result.qualityScore,
+    technographics: result.technologies,
   };
 
   return {
@@ -43,6 +73,7 @@ export async function enrichWebsite(lead: LeadRecord) {
       hasBookingSystem: result.hasBookingSystem,
       isMobileResponsive: result.isMobileResponsive,
       qualityScore: result.qualityScore,
+      technologiesDetected: Object.keys(result.technologies).length,
     },
     updates,
   };
@@ -84,7 +115,6 @@ async function analyzeWebsite(url: string) {
     html = await response.text();
 
     if (response.ok) {
-      // Check for parked domain indicators
       const lowerHtml = html.toLowerCase();
       const isParked = PARKED_INDICATORS.some((indicator) => lowerHtml.includes(indicator));
 
@@ -106,50 +136,51 @@ async function analyzeWebsite(url: string) {
 
   const lowerHtml = html.toLowerCase();
 
-  // Check for booking system
   const hasBookingSystem = BOOKING_KEYWORDS.some((keyword) =>
     lowerHtml.includes(keyword)
   );
 
-  // Check for mobile responsiveness
   const hasViewport = /<meta[^>]+name=["']viewport["']/i.test(html);
   const hasMediaQueries = /@media\s*\(/i.test(html);
   const isMobileResponsive = hasViewport || hasMediaQueries;
 
-  // Calculate quality score
+  const technologies: Record<string, string> = {};
+  for (const [name, pattern] of Object.entries(TECHNOLOGY_PATTERNS)) {
+    if (pattern.test(html)) {
+      technologies[name] = 'detected';
+    }
+  }
+
   let qualityScore = 50;
 
-  // HTTPS check
   if (url.startsWith('https://')) {
     qualityScore += 20;
   }
 
-  // Mobile responsive
   if (isMobileResponsive) {
     qualityScore += 15;
   }
 
-  // Meaningful content
   if (html.length > 1000) {
     qualityScore += 10;
   }
 
-  // Has booking system
   if (hasBookingSystem) {
     qualityScore += 10;
   }
 
-  // Has contact form or email link
   if (/<form[^>]+(action|method)/i.test(html) || /mailto:/i.test(html)) {
     qualityScore += 10;
   }
 
-  // Has social media links
   if (/(facebook\.com|twitter\.com|instagram\.com|linkedin\.com)/i.test(html)) {
     qualityScore += 5;
   }
 
-  // Penalties
+  if (Object.keys(technologies).length > 3) {
+    qualityScore += 5;
+  }
+
   if (status === 'parked') {
     qualityScore -= 20;
   }
@@ -157,7 +188,6 @@ async function analyzeWebsite(url: string) {
     qualityScore -= 30;
   }
 
-  // Clamp score
   qualityScore = Math.max(0, Math.min(100, qualityScore));
 
   return {
@@ -165,5 +195,6 @@ async function analyzeWebsite(url: string) {
     hasBookingSystem,
     isMobileResponsive,
     qualityScore,
+    technologies,
   };
 }

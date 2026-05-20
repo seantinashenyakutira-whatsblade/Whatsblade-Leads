@@ -6,6 +6,7 @@ import { ResultsTable } from '@/components/discover/results-table';
 import { BulkActions } from '@/components/discover/bulk-actions';
 import { AddToCampaignDialog } from '@/components/discover/add-to-campaign-dialog';
 import { useDiscoverSearch, useSaveDiscoveredLeads } from '@/hooks/use-discover';
+import { useSaveSearch } from '@/hooks/use-search';
 import type { DiscoveredLead } from '@/types';
 import type { DiscoverFilterInput } from '@/lib/validations/discover';
 import { toast } from 'sonner';
@@ -33,15 +34,39 @@ export default function DiscoverPage() {
   const [sortColumn, setSortColumn] = useState<string>('leadScore');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showCampaignDialog, setShowCampaignDialog] = useState(false);
+  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
 
   const { isLoading, refetch } = useDiscoverSearch(filters);
   const saveMutation = useSaveDiscoveredLeads();
+  const saveSearchMutation = useSaveSearch();
 
   const handleSearch = async () => {
     try {
       const result = await refetch();
       if (result.data) {
         setResults(result.data.items || []);
+        setPagination({
+          page: result.data.page || 1,
+          totalPages: result.data.totalPages || 1,
+          total: result.data.total || 0,
+        });
+
+        const searchQuery = [filters.industry, filters.city, filters.country].filter(Boolean).join(' ');
+        saveSearchMutation.mutate({
+          query: searchQuery || 'business',
+          industry: filters.industry,
+          country: filters.country,
+          city: filters.city,
+          radius: parseInt(filters.radius),
+          filters: {
+            noWebsiteOnly: filters.noWebsiteOnly,
+            hasPhone: filters.hasPhone,
+            hasEmail: filters.hasEmail,
+            hasSocialMedia: filters.hasSocialMedia,
+            minRating: filters.minRating,
+          },
+          resultCount: result.data.total || 0,
+        });
       }
     } catch {
       toast.error('Search failed. Please try again.');
@@ -78,6 +103,11 @@ export default function DiscoverPage() {
       sortBy: (newFilters.sortBy as DiscoverFilterInput['sortBy']) || 'leadScore',
       sortOrder: (newFilters.sortOrder as DiscoverFilterInput['sortOrder']) || 'desc',
     });
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setFilters((prev) => ({ ...prev, page: newPage }));
+    handleSearch();
   };
 
   const handleToggleSelect = (id: string) => {
@@ -203,6 +233,10 @@ export default function DiscoverPage() {
         onSort={handleSort}
         sortColumn={sortColumn}
         sortOrder={sortOrder}
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        total={pagination.total}
+        onPageChange={handlePageChange}
       />
 
       <BulkActions
