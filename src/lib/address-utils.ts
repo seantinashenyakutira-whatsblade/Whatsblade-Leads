@@ -1,4 +1,4 @@
-import { COUNTRIES, getCountryByCode } from '@/lib/countries';
+import { COUNTRIES } from '@/lib/countries';
 
 const COUNTRY_NAMES_TO_CODE: Record<string, string> = {};
 
@@ -119,7 +119,6 @@ export function formatOpeningHours(openingHours: Record<string, unknown>): strin
 export function resolvePhotoUrl(photoName: string, apiKey: string): string {
   if (!photoName || !apiKey) return '';
   
-  const photoRef = photoName.split('/').pop() || photoName;
   return `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=400&maxWidthPx=400&key=${apiKey}`;
 }
 
