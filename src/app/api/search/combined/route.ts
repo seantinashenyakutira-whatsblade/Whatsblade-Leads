@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { googleTextSearch, googlePlaceDetails, extractIndustryFromTypes, geocodeWithFallback } from '@/lib/google-places';
+import { facebookPageSearch, mapFacebookToDiscovered } from '@/lib/facebook-graph';
+import { calculateLeadScore } from '@/lib/scoring';
+import { getCachedPlaces, cachePlaces } from '@/lib/redis/client';
+import { parseAddress, formatOpeningHours, resolvePhotoUrl } from '@/lib/address-utils';
+import { env } from '@/lib/env';
 
 const combinedCache = new Map<string, { data: unknown; expiresAt: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
@@ -37,6 +43,97 @@ function isDuplicate(newItem: DiscoveredItem, existing: DiscoveredItem[]): boole
   });
 }
 
+async function searchGoogle(query: string, radiusKm: number, location: { lat: number; lng: number } | null) {
+  const lat = location?.lat ?? 0;
+  const lng = location?.lng ?? 0;
+  const radius = radiusKm ?? 50;
+
+  const cached = await getCachedPlaces(query, lat, lng, radius);
+  if (cached) return cached.items || [];
+
+  const results = await googleTextSearch(query, radiusKm, location);
+  const apiKey = env.GOOGLE_PLACES_API_KEY;
+
+  const detailed = await Promise.all(
+    results.slice(0, 30).map(async (place) => {
+      const details = await googlePlaceDetails(place.id);
+      const p = details || place;
+
+      const website = p.websiteUri || '';
+      const phone = p.internationalPhoneNumber || '';
+      const emails = (p as unknown as Record<string, unknown>).emailAddresses as string[] | undefined;
+      const email = emails?.[0] || null;
+      const socialMedia = p.googleMapsUri ? { google_maps: p.googleMapsUri } : {};
+      const hasSocialMedia = Object.keys(socialMedia).length > 0;
+      const industry = extractIndustryFromTypes(p.types);
+      const parsedAddress = parseAddress(p.formattedAddress || '');
+
+      const leadScore = calculateLeadScore({
+        hasWebsite: !!website,
+        hasPhone: !!phone,
+        hasEmail: !!email,
+        hasSocialMedia,
+        googleRating: p.rating ?? null,
+      });
+
+      const photoUrls = (p.photos || [])
+        .slice(0, 5)
+        .map((photo: { name: string }) => resolvePhotoUrl(photo.name, apiKey || ''))
+        .filter((url: string) => url);
+
+      return {
+        id: `google:${p.id}`,
+        name: p.displayName?.text || '',
+        industry,
+        address: p.formattedAddress || null,
+        city: parsedAddress.city,
+        country: parsedAddress.country,
+        countryCode: parsedAddress.countryCode,
+        latitude: p.location?.latitude || null,
+        longitude: p.location?.longitude || null,
+        phone: phone || null,
+        email: email || null,
+        emailAddresses: emails || [],
+        website: website || null,
+        googleRating: p.rating ?? null,
+        googleReviewCount: p.userRatingCount ?? null,
+        socialMedia,
+        leadScore,
+        source: 'google' as const,
+        photos: photoUrls,
+        openingHours: p.regularOpeningHours || {},
+        openingHoursFormatted: formatOpeningHours(p.regularOpeningHours || {}),
+        priceLevel: p.priceLevel ? parseInt(p.priceLevel) : null,
+        googlePlaceId: p.id,
+        facebookPageId: null,
+      };
+    })
+  );
+
+  await cachePlaces(query, lat, lng, radius, { items: detailed, total: detailed.length });
+
+  return detailed;
+}
+
+async function searchFacebook(query: string, center: { lat: number; lng: number }, radiusKm: number) {
+  const results = await facebookPageSearch(query, center, radiusKm);
+
+  return results.map((page) => {
+    const d = mapFacebookToDiscovered(page);
+    const { _hasWebsite, _hasPhone, _hasEmail, _hasSocialMedia, ...rest } = d;
+    return {
+      ...rest,
+      leadScore: calculateLeadScore({
+        hasWebsite: _hasWebsite,
+        hasPhone: _hasPhone,
+        hasEmail: _hasEmail,
+        hasSocialMedia: _hasSocialMedia,
+        googleRating: null,
+      }),
+    };
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -49,58 +146,29 @@ export async function POST(request: NextRequest) {
     }
 
     let location: { lat: number; lng: number } | null = null;
-    const searchParts: string[] = [];
 
     if (city) {
-      searchParts.push(city);
-      if (country) searchParts.push(country);
-      const geoRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/search/geocode`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: searchParts.join(', ') }),
-      });
-      if (geoRes.ok) {
-        location = await geoRes.json();
-      }
+      const searchAddress = country ? `${city}, ${country}` : city;
+      location = await geocodeWithFallback(searchAddress);
     }
 
     const searchQuery = industry || city || 'business';
     const radiusNum = parseInt(radius) || 25;
     const limit = parseInt(maxResults) || 25;
 
-    const [googleRes, facebookRes] = await Promise.allSettled([
-      fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/search/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: searchQuery + (city ? ` in ${city}` : ''),
-          radiusKm: radiusNum,
-          location,
-        }),
-      }),
-      location
-        ? fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/search/facebook`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              query: searchQuery,
-              center: location,
-              radiusKm: radiusNum,
-            }),
-          })
-        : Promise.resolve({ ok: false }),
+    const [googleItems, facebookItems] = await Promise.allSettled([
+      searchGoogle(searchQuery + (city ? ` in ${city}` : ''), radiusNum, location),
+      location ? searchFacebook(searchQuery, location, radiusNum) : Promise.resolve([]),
     ]);
 
     const allItems: DiscoveredItem[] = [];
 
-    if (googleRes.status === 'fulfilled' && googleRes.value.ok) {
-      const googleData = await googleRes.value.json();
-      allItems.push(...(googleData.items || []));
+    if (googleItems.status === 'fulfilled') {
+      allItems.push(...googleItems.value);
     }
 
-    if (facebookRes.status === 'fulfilled' && 'json' in facebookRes.value && facebookRes.value.ok) {
-      const facebookData = await facebookRes.value.json();
-      allItems.push(...(facebookData.items || []));
+    if (facebookItems.status === 'fulfilled') {
+      allItems.push(...facebookItems.value);
     }
 
     let deduplicated = allItems.filter(
@@ -174,6 +242,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(responseData);
   } catch (err) {
     console.error('[API] Combined search error:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ 
+      error: err instanceof Error ? err.message : 'Internal server error',
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 25,
+      totalPages: 0,
+      sources: {},
+    }, { status: 200 });
   }
 }

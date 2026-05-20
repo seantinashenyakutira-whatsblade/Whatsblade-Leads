@@ -43,7 +43,7 @@ export default function DiscoverPage() {
   const handleSearch = async () => {
     try {
       const result = await refetch();
-      if (result.data) {
+      if (result.data && !result.data.error) {
         setResults(result.data.items || []);
         setPagination({
           page: result.data.page || 1,
@@ -67,9 +67,16 @@ export default function DiscoverPage() {
           },
           resultCount: result.data.total || 0,
         });
+      } else if (result.data?.error) {
+        toast.error(result.data.error);
+        setResults([]);
+        setPagination({ page: 1, totalPages: 1, total: 0 });
       }
-    } catch {
-      toast.error('Search failed. Please try again.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Search failed. Please try again.';
+      toast.error(message);
+      setResults([]);
+      setPagination({ page: 1, totalPages: 1, total: 0 });
     }
   };
 
